@@ -548,7 +548,7 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 	}
 
 	var input *bytes.Reader
-	var rawInput *bytes.Buffer
+	var rawInput proxy.RawInput
 	switch requestAddons.Flow {
 	case vless.XRV:
 		if account.Flow == requestAddons.Flow {
@@ -581,9 +581,10 @@ func (h *Handler) Process(ctx context.Context, network net.Network, connection s
 					return errors.New("XTLS only supports TLS and REALITY directly for now.").AtWarning()
 				}
 				i, _ := t.FieldByName("input")
-				r, _ := t.FieldByName("rawInput")
+				// r, _ := t.FieldByName("rawInput")
 				input = (*bytes.Reader)(unsafe.Pointer(p + i.Offset))
-				rawInput = (*bytes.Buffer)(unsafe.Pointer(p + r.Offset))
+				// rawInput = (*bytes.Buffer)(unsafe.Pointer(p + r.Offset))
+				rawInput = proxy.NewRawInputRef(unsafe.Pointer(p), t)
 			}
 		} else {
 			return errors.New("account " + account.ID.String() + " is not able to use the flow " + requestAddons.Flow).AtWarning()

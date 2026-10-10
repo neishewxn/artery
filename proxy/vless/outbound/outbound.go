@@ -244,7 +244,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 	}
 
 	var input *bytes.Reader
-	var rawInput *bytes.Buffer
+	var rawInput proxy.RawInput
 	allowUDP443 := false
 	switch requestAddons.Flow {
 	case vless.XRV + "-udp443":
@@ -282,9 +282,10 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 				return errors.New("XTLS only supports TLS and REALITY directly for now.").AtWarning()
 			}
 			i, _ := t.FieldByName("input")
-			r, _ := t.FieldByName("rawInput")
+			// r, _ := t.FieldByName("rawInput")
 			input = (*bytes.Reader)(unsafe.Pointer(p + i.Offset))
-			rawInput = (*bytes.Buffer)(unsafe.Pointer(p + r.Offset))
+			// rawInput = (*bytes.Buffer)(unsafe.Pointer(p + r.Offset))
+			rawInput = proxy.NewRawInputRef(unsafe.Pointer(p), t)
 		default:
 			panic("unknown VLESS request command")
 		}

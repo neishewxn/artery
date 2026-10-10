@@ -11,9 +11,11 @@ import (
 	"crypto/rand"
 	"io"
 	"math/big"
+	"reflect"
 	"runtime"
 	"strconv"
 	"time"
+	"unsafe"
 
 	"github.com/pires/go-proxyproto"
 	"github.com/xtls/xray-core/app/dispatcher"
@@ -180,14 +182,14 @@ type VisionReader struct {
 	isUplink     bool
 	conn         net.Conn
 	input        *bytes.Reader
-	rawInput     *bytes.Buffer
+	rawInput     RawInput
 	ob           *session.Outbound
 
 	// internal
 	directReadCounter stats.Counter
 }
 
-func NewVisionReader(reader buf.Reader, trafficState *TrafficState, isUplink bool, ctx context.Context, conn net.Conn, input *bytes.Reader, rawInput *bytes.Buffer, ob *session.Outbound) *VisionReader {
+func NewVisionReader(reader buf.Reader, trafficState *TrafficState, isUplink bool, ctx context.Context, conn net.Conn, input *bytes.Reader, rawInput RawInput, ob *session.Outbound) *VisionReader {
 	return &VisionReader{
 		Reader:       reader,
 		trafficState: trafficState,
@@ -261,13 +263,18 @@ func (w *VisionReader) ReadMultiBuffer() (buf.MultiBuffer, error) {
 		if inputBuffer, err := buf.ReadFrom(w.input); err == nil && !inputBuffer.IsEmpty() {
 			buffer, _ = buf.MergeMulti(buffer, inputBuffer)
 		}
-		if rawInputBuffer, err := buf.ReadFrom(w.rawInput); err == nil && !rawInputBuffer.IsEmpty() {
-			buffer, _ = buf.MergeMulti(buffer, rawInputBuffer)
+		if b := w.rawInput.load(); b != nil && b.Len() > 0 {
+			if rawInputBuffer, err := buf.ReadFrom(b); err == nil && !rawInputBuffer.IsEmpty() {
+				buffer, _ = buf.MergeMulti(buffer, rawInputBuffer)
+			}
 		}
+		// if rawInputBuffer, err := buf.ReadFrom(w.rawInput); err == nil && !rawInputBuffer.IsEmpty() {
+		// 	buffer, _ = buf.MergeMulti(buffer, rawInputBuffer)
+		// }
 		*w.input = bytes.Reader{} // release memory
 		w.input = nil
-		*w.rawInput = bytes.Buffer{} // release memory
-		w.rawInput = nil
+		// *w.rawInput = bytes.Buffer{} // release memory
+		// w.rawInput = nil
 
 		if inbound := session.InboundFromContext(w.ctx); inbound != nil && inbound.Conn != nil {
 			// if w.isUplink && inbound.CanSpliceCopy == 2 { // TODO: enable uplink splice
@@ -401,6 +408,29 @@ func (w *VisionWriter) WriteMultiBuffer(mb buf.MultiBuffer) error {
 		spliceReadyInbound.CanSpliceCopy = 1
 	}
 	return nil
+}
+
+type RawInput struct {
+	addr unsafe.Pointer
+	ptr  bool
+}
+
+func (r RawInput) load() *bytes.Buffer {
+	if r.addr == nil {
+		return nil
+	}
+	if r.ptr {
+		return *(**bytes.Buffer)(r.addr)
+	}
+	return (*bytes.Buffer)(r.addr)
+}
+
+func NewRawInputRef(base unsafe.Pointer, typ reflect.Type) RawInput {
+	f, ok := typ.FieldByName("rawInput")
+	if !ok {
+		return RawInput{}
+	}
+	return RawInput{addr: unsafe.Add(base, f.Offset), ptr: f.Type.Kind() == reflect.Pointer}
 }
 
 // IsCompleteRecord Is complete tls data record
